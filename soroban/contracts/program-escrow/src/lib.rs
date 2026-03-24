@@ -1,4 +1,20 @@
 #![no_std]
+//! Soroban program escrow contract with cursor-based search helpers.
+//!
+//! Search reads are backed by a persisted `ProgramIndex` list instead of
+//! scanning contract storage directly. Each successful registration appends its
+//! `program_id` once, and `get_programs` pages over that list in order.
+//!
+//! Search indexing assumptions:
+//! - registrations append stable `program_id` cursor values to `ProgramIndex`
+//! - the query path skips missing program records defensively
+//! - callers paginate with cursors rather than requesting unbounded full scans
+//! - the returned page size is clamped to `MAX_PAGE_SIZE`
+//!
+//! Security notes:
+//! - search helpers are read-only and never mutate contract state
+//! - query work is bounded by the stored index and capped page size
+//! - cursor pagination keeps results reviewable and avoids hidden full scans
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env,
@@ -112,11 +128,20 @@ pub enum DataKey {
     Admin,
     Token,
     Program(u64),
+    /// Jurisdiction config is stored separately from the main program record.
     ProgramJurisdiction(u64),
+    /// Stable index used by `get_programs` and `get_program_count`.
     ProgramIndex,
     DeprecationState,
 }
 
+/// Filter inputs for cursor-based program search.
+///
+/// `status_filter` values:
+/// - `0`: any status
+/// - `1`: active
+/// - `2`: completed
+/// - `3`: cancelled
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramSearchCriteria {
@@ -124,6 +149,7 @@ pub struct ProgramSearchCriteria {
     pub admin: Option<Address>,
 }
 
+/// One flattened program entry returned from a search page.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramRecord {
@@ -134,6 +160,10 @@ pub struct ProgramRecord {
     pub status: ProgramStatus,
 }
 
+/// One page of program search results.
+///
+/// When `has_more` is true, pass `next_cursor` back into `get_programs` to
+/// continue scanning from the next indexed program.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramPage {
@@ -641,6 +671,8 @@ impl ProgramEscrowContract {
     }
 
     /// Set deprecation and optional migration target.
+    ///
+    /// Deprecation blocks new registrations while preserving read/query access.
     pub fn set_deprecated(
         env: Env,
         deprecated: bool,
@@ -670,6 +702,7 @@ impl ProgramEscrowContract {
         Self::get_deprecation_state(&env)
     }
 
+    /// Read the stored jurisdiction config for a program.
     pub fn get_program_jurisdiction(
         env: Env,
         program_id: u64,
@@ -683,6 +716,7 @@ impl ProgramEscrowContract {
             .get(&DataKey::ProgramJurisdiction(program_id)))
     }
 
+    /// Return the total number of program ids tracked in the search index.
     pub fn get_program_count(env: Env) -> u32 {
         let index: Vec<u64> = env
             .storage()
@@ -692,7 +726,16 @@ impl ProgramEscrowContract {
         index.len()
     }
 
-    /// Paginated search over programs.
+    /// Paginated search over programs using the persisted `ProgramIndex`.
+    ///
+    /// Cursor semantics:
+    /// - `None` starts from the beginning of the index
+    /// - `Some(program_id)` resumes after that indexed id
+    /// - an unknown cursor returns an empty page rather than falling back to a full scan
+    ///
+    /// Limit semantics:
+    /// - `0` is treated as `MAX_PAGE_SIZE`
+    /// - values above `MAX_PAGE_SIZE` are clamped
     pub fn get_programs(
         env: Env,
         criteria: ProgramSearchCriteria,
