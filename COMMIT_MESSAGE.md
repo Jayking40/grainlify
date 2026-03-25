@@ -43,12 +43,14 @@ tracking, and security validation across both payout methods.
 ### Documentation Updates
 
 #### README.md - Payout Semantics Section
+
 - Documents mirrored behavior between single and batch paths
 - Explains shared security features (auth, reentrancy, circuit breaker)
 - Clarifies intentional event differences (recipient vs recipient_count)
 - Lists implementation coverage checklist
 
 #### Code Documentation
+
 - Verified existing /// doc comments on single_payout() function
 - Already documents: arguments, returns, security model
 - Matches documentation depth of batch_payout()
@@ -66,6 +68,7 @@ tracking, and security validation across both payout methods.
 ## Event Semantics Equivalence
 
 Both single_payout() and batch_payout() emit events with:
+
 - Event version (EVENT_VERSION_V2)
 - Program ID for traceability
 - Amount information (specific recipient vs total_amount)
