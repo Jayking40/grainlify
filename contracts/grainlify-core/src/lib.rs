@@ -6,11 +6,14 @@
 #![no_std]
 
 mod multisig;
-use multisig::{MultiSig, MultiSigConfig};
+use multisig::MultiSig;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
     String, Symbol, Vec,
 };
+
+#[cfg(test)]
+use soroban_sdk::testutils::Address as _;
 pub mod asset;
 mod governance;
 pub mod nonce;
@@ -749,7 +752,7 @@ impl GrainlifyContract {
         env.storage().instance().set(&DataKey::Version, &VERSION);
 
         // Track successful operation
-        let caller = Address::generate(&env);
+        let caller = env.current_contract_address();
         monitoring::track_operation(&env, symbol_short!("init"), caller.clone(), true);
 
         // Track performance
