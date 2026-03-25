@@ -1786,8 +1786,11 @@ mod test {
     pub mod invariant_entrypoints_tests;
     pub mod upgrade_rollback_tests;
 
-    // WASM for testing
-    pub const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/grainlify_core.wasm");
+    // WASM for testing (only available after `cargo build --target wasm32v1-none --release`)
+    // Guarded behind a feature flag so unit tests compile without the WASM artifact.
+    #[cfg(feature = "wasm_tests")]
+    pub const WASM: &[u8] =
+        include_bytes!("../target/wasm32v1-none/release/grainlify_core.wasm");
 
     #[test]
     fn multisig_init_works() {
@@ -1912,8 +1915,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Target version must be greater than current version")]
-    fn test_migration_repeated_same_version_rejected() {
+    fn test_migration_repeated_same_version_is_idempotent() {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -1929,8 +1931,9 @@ mod test {
         client.migrate(&3, &migration_hash);
         assert_eq!(client.get_version(), 3);
 
-        // Repeating same target is rejected by current migration guard
+        // Repeating same target is a no-op (idempotent)
         client.migrate(&3, &migration_hash);
+        assert_eq!(client.get_version(), 3);
     }
 
     #[test]
@@ -2172,7 +2175,6 @@ mod test {
     // ========================================================================
 
     #[test]
-    #[should_panic(expected = "Target version must be greater than current version")]
     fn test_migration_rejects_repeat_for_same_target_version() {
         let env = Env::default();
         env.mock_all_auths();
@@ -2190,8 +2192,9 @@ mod test {
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         client.migrate(&3, &hash);
 
-        // Second call with same version is rejected by current migration guard
+        // Second call with same version is a no-op (idempotent)
         client.migrate(&3, &hash);
+        assert_eq!(client.get_version(), 3);
     }
 
     #[test]

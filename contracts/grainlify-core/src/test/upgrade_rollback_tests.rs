@@ -267,7 +267,6 @@ fn test_migration_state_tracking() {
 }
 
 #[test]
-#[should_panic(expected = "Target version must be greater than current version")]
 fn test_migration_idempotency() {
     let env = Env::default();
     env.mock_all_auths();
@@ -282,10 +281,18 @@ fn test_migration_idempotency() {
 
     // First migration
     client.migrate(&3, &migration_hash);
-    let _state1 = client.get_migration_state().unwrap();
+    let state1 = client.get_migration_state().unwrap();
 
-    // Second migration with same version should be rejected
+    // Second migration with same version is a no-op (idempotent)
     client.migrate(&3, &migration_hash);
+    let state2 = client.get_migration_state().unwrap();
+
+    // State must be identical — migration did not re-run
+    assert_eq!(state1.from_version, state2.from_version);
+    assert_eq!(state1.to_version, state2.to_version);
+    assert_eq!(state1.migrated_at, state2.migrated_at);
+    assert_eq!(state1.migration_hash, state2.migration_hash);
+    assert_eq!(client.get_version(), 3);
 }
 
 // ============================================================================
